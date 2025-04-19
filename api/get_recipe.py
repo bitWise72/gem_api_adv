@@ -261,7 +261,12 @@ def test():
     return jsonify({"status": "ok", "message": "API is working", "auth_required": False})
 
 
-if __name__ == '__main__':
-    app.run(debug=True)
-# For Vercel, the app object itself is what's needed
-# The "app" variable should be exported
+# Remove or comment out the local-run block:
+# if __name__ == '__main__':
+#     app.run(debug=True)
+
+# ---- add this instead ----
+# Wrap your Flask app as a Vercel Serverless Function
+# from vercel_wsgi import VercelWSGI
+#
+# handler = VercelWSGI(app)
