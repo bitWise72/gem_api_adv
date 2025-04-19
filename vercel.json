@@ -1,19 +1,11 @@
 {
   "builds": [
-    {
-      "src": "api/get_recipe.py",
-      "use": "@vercel/python"
-    }
+    { "src": "api/get_recipe.py", "use": "@vercel/python" }
   ],
   "routes": [
     {
       "src": "/api/get_recipe",
-      "methods": ["POST"],
-      "dest": "api/get_recipe.py"
-    },
-    {
-      "src": "/api/get_recipe",
-      "methods": ["GET"],
+      "methods": ["GET", "POST"],
       "dest": "api/get_recipe.py"
     }
   ]
