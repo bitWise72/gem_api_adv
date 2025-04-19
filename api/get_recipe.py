@@ -264,8 +264,8 @@ def test():
 
 
 # Remove or comment out the local-run block:
-if __name__ == '__main__':
-    app.run(debug=True)
+# if __name__ == '__main__':
+#     app.run(debug=True)
 
 # ---- add this instead ----
 # Wrap your Flask app as a Vercel Serverless Function
@@ -273,6 +273,6 @@ if __name__ == '__main__':
 #
 # handler = VercelWSGI(app)
 # Add this instead of the commented VercelWSGI section
-# def vercel_handler(request):
-#     with app.app_context():
-#         return app(request)
+def vercel_handler(request):
+    with app.app_context():
+        return app(request)
