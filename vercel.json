@@ -7,9 +7,10 @@
       "src": "/api/get_recipe",
       "methods": ["GET", "POST"],
       "dest": "api/get_recipe.py"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "api/get_recipe.py"
     }
-  ],
-  "rewrites": [
-    { "src": "/api/.*", "dest": "api/get_recipe.py" }
   ]
 }
