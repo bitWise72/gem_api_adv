@@ -117,6 +117,8 @@ def parse_gemini_response(response_text):
 
 @app.route('/get_recipe', methods=['POST'])
 def get_gemini_response(prompt_text=None, client=None, image_file=None, image_url=None):
+    # data = request.json  # Uses Flask's `request`, not the parameter
+    ...
     """
     Get a recipe from Gemini API using text and/or image input.
 
@@ -182,7 +184,7 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
 
     print("---------------------------------------------------")
     print(recipe_data_dict)
-    return recipe_data_dict
+    return jsonify(recipe_data_dict)
 
 
 # def parse_gemini_response(response_text):
@@ -262,11 +264,15 @@ def test():
 
 
 # Remove or comment out the local-run block:
-# if __name__ == '__main__':
-#     app.run(debug=True)
+if __name__ == '__main__':
+    app.run(debug=True)
 
 # ---- add this instead ----
 # Wrap your Flask app as a Vercel Serverless Function
 # from vercel_wsgi import VercelWSGI
 #
 # handler = VercelWSGI(app)
+# Add this instead of the commented VercelWSGI section
+# def vercel_handler(request):
+#     with app.app_context():
+#         return app(request)
