@@ -115,7 +115,7 @@ def parse_gemini_response(response_text):
         raise
 
 
-@app.route('api/get_recipe', methods=['POST'])
+@app.route('/api/get_recipe', methods=['POST'])
 def get_gemini_response(prompt_text=None, client=None, image_file=None, image_url=None):
     # data = request.json  # Uses Flask's `request`, not the parameter
     ...
