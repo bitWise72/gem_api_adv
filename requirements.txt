@@ -1,0 +1,11 @@
+flask
+python-dotenv
+flask-cors
+google-generativeai
+requests
+Flask
+flask-cors
+python-dotenv
+google-genai
+requests
+
