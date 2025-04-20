@@ -8,7 +8,18 @@
   ],
   "routes": [
     {
+      "src": "/get_recipe",
+      "methods": ["POST"],
+      "dest": "api/index.py"
+    },
+    {
+      "src": "/test",
+      "methods": ["GET"],
+      "dest": "api/index.py"
+    },
+    {
       "src": "/",
+      "methods": ["GET"],
       "dest": "api/index.py"
     }
   ]
