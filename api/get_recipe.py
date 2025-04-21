@@ -140,7 +140,7 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
         return response
       
     data = request.json
-    prompt_text = data.get('prompt_text')
+    prompt_text = data.get('user_prompt', '').strip()
     image_url = data.get('image_url')
     try:
         print(f"Initializing Gemini API...")
