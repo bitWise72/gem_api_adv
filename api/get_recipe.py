@@ -25,15 +25,15 @@ from google.genai import types
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Get API key from environment
-gemini_api_key = "AIzaSyCXrn9vtRUzn0zHueixlfs7qvrVgb5yUwE"
-DEFAULT_GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
-if not DEFAULT_GEMINI_API_KEY:
-    logger.warning("DEFAULT_GEMINI_API_KEY is not set in the environment.")
+gemini_api_key = os.environ.get('GEMINI_API_KEY')
+
+# if not DEFAULT_GEMINI_API_KEY:
+#     logger.warning("DEFAULT_GEMINI_API_KEY is not set in the environment.")
 
 SYSTEM_PROMPT = """You are a precise and helpful cooking assistant, acting like the voice assistant of Google Gemini, specialized in providing accurate recipe information. Your primary goal is to eliminate vague measurements and ensure baking precision.
 The user may request for a recipe for a particular dish or they may provide their own recipe as user request. 
@@ -131,6 +131,15 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
     Returns:
         str: Gemini-generated response or structured JSON error.
     """
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':  # Added
+        response = app.make_default_options_response()  # Added
+        response.headers.update({  # Added
+            'Access-Control-Allow-Origin': '*',  # Added
+            'Access-Control-Allow-Headers': 'Content-Type',  # Added
+            'Access-Control-Allow-Methods': 'POST, OPTIONS'  # Added
+        })  
+        return response  
     data = request.json
     prompt_text = data.get('prompt_text')
     image_url = data.get('image_url')
