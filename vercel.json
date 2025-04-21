@@ -9,7 +9,7 @@
   "routes": [
     {
       "src": "/get_recipe",
-      "methods": ["POST"],
+      "methods": ["POST","OPTIONS"],
       "dest": "/api/index.py"
     },
     {

@@ -20,7 +20,7 @@ import requests
 from google.generativeai.types import content_types
 from google import genai
 from google.genai import types
-
+from flask_cors import CORS
 # Load environment variables
 load_dotenv()
 
@@ -115,7 +115,7 @@ def parse_gemini_response(response_text):
         raise
 
 
-@app.route('/get_recipe', methods=['POST'])
+@app.route("/get_recipe", methods=["POST", "OPTIONS"])
 def get_gemini_response(prompt_text=None, client=None, image_file=None, image_url=None):
     # data = request.json  # Uses Flask's `request`, not the parameter
     ...
@@ -132,14 +132,13 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
         str: Gemini-generated response or structured JSON error.
     """
     # Handle CORS preflight
-    if request.method == 'OPTIONS':  # Added
-        response = app.make_default_options_response()  # Added
-        response.headers.update({  # Added
-            'Access-Control-Allow-Origin': '*',  # Added
-            'Access-Control-Allow-Headers': 'Content-Type',  # Added
-            'Access-Control-Allow-Methods': 'POST, OPTIONS'  # Added
-        })  
-        return response  
+    if request.method == "OPTIONS":  # ADDED — handle preflight
+        response = app.make_default_options_response()
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        return response
+      
     data = request.json
     prompt_text = data.get('prompt_text')
     image_url = data.get('image_url')
