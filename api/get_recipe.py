@@ -175,7 +175,7 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
             raise ValueError("No prompt_text or image provided to Gemini API.")
 
         print(f"Sending content to Gemini API: {contents}")
-        response = client.models.generate_content(model="gemini-2.5-pro-preview-03-25", contents=contents)
+        response = client.models.generate_content(model="gemini-2.0-flash-exp", contents=contents)
 
         print(f"Raw Gemini response: {response}")
         if not response or not response.text:
