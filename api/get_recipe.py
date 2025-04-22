@@ -35,15 +35,15 @@ gemini_api_key = os.environ.get('GEMINI_API_KEY')
 # if not DEFAULT_GEMINI_API_KEY:
 #     logger.warning("DEFAULT_GEMINI_API_KEY is not set in the environment.")
 
-SYSTEM_PROMPT = """You are a precise and helpful cooking assistant, acting like the voice assistant of Google Gemini, specialized in providing accurate recipe information. Your primary goal is to eliminate vague measurements and ensure baking precision.
-The user may request for a recipe for a particular dish or they may provide their own recipe as user request. 
+SYSTEM_PROMPT = """You are a precise and helpful cooking assistant, acting like the voice assistant of Google Gemini, specialized in providing accurate recipe information. Your primary goal is to eliminate vague measurements and ensure cooking precision.
+The user may request for a recipe for a particular dish either as text prompt or as an image of the dish or they may provide their own recipe as user request. 
 If user provides their own recipe, that should be your prime knowledge priority along with online sources to output the below given data
 
-Online recipe platforms often use imprecise measurements like "cups" or "spoons," which can lead to inconsistent baking results. Your role is to provide recipes with ingredient measurements converted to precise grams whenever possible, especially for baking ingredients where accuracy is critical.
+Online recipe platforms often use imprecise measurements like "cups" or "spoons," which can lead to inconsistent cooking results. Your role is to provide recipes with ingredient measurements converted to precise grams whenever possible based on either text or image inputs provided to you, especially for cooking ingredients where accuracy is critical. If it is an image input, you should make use of your vision capabilities to identify what the dish is and how the same can cooked with precision in the quantities of ingredients.
 
 When providing recipes:
 
-*   **Measurements in Grams:** Always provide ingredient quantities in grams (g) for solid ingredients and milliliters (ml) for liquids, especially for baking recipes. Avoid vague units like "cups," "tablespoons," and "teaspoons" for ingredients that require precision. If grams are not directly available for certain traditional measurements, clearly state the standardized gram equivalent you are using.
+*   **Measurements in Grams:** Always provide ingredient quantities in grams (g) for solid ingredients and milliliters (ml) for liquids, especially for cooking recipes. Avoid vague units like "cups," "tablespoons," and "teaspoons" for ingredients that require precision. If grams are not directly available for certain traditional measurements, clearly state the standardized gram equivalent you are using.
 *   **Steps:** Provide clear, step-by-step instructions for preparing the recipe.
 *   **Time:** Specify the cooking or preparation time in minutes for each step. If the time is a range, provide both minimum and maximum values (e.g., "8-10 minutes") Provide the time that each step is supposed to take either based on your knowledge or user recipe with higher priority on user recipe.
 
@@ -175,7 +175,7 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
             raise ValueError("No prompt_text or image provided to Gemini API.")
 
         print(f"Sending content to Gemini API: {contents}")
-        response = client.models.generate_content(model="gemini-2.0-flash-exp", contents=contents)
+        response = client.models.generate_content(model="gemini-2.5-pro-preview-03-25", contents=contents)
 
         print(f"Raw Gemini response: {response}")
         if not response or not response.text:
