@@ -143,7 +143,7 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
     data = request.json
     prompt_text = data.get('user_prompt', '').strip()
     if len(prompt_text.strip().split()) <= 2:
-        prompt_text = f"Generate a recipe for {prompt_text.strip()}. Include ingredients, steps, and servings."
+        prompt_text = f"Generate the recipe for {prompt_text.strip()} and provide accurate measurements in grams and time in minutes."
 
     image_url = data.get('image_url')
     try:
