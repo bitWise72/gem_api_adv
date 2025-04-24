@@ -12,12 +12,10 @@ import re
 import ast
 import json
 from flask import Flask, request, jsonify
-import google.generativeai as genai
 from dotenv import load_dotenv
 from flask_cors import CORS
 from logging import Logger
 import requests
-from google.generativeai.types import content_types
 from google import genai
 from google.genai import types
 from flask_cors import CORS
@@ -164,8 +162,7 @@ def parse_nutri_response(response_text):
     logger.info("Successfully parsed and validated nutrition data structure.")
     return nutrition_data
 
-# --- API Endpoint for Nutritional Analysis ---
-@app.route("/get_nutri", methods=["POST","OPTIONS"])
+@app.route("/get_nutri", methods=["POST", "OPTIONS"])
 def get_nutrition_profile():
     """
     API endpoint to get nutritional information for a list of ingredients.
@@ -175,79 +172,66 @@ def get_nutrition_profile():
     if request.method == "OPTIONS":
         logger.debug("Handling OPTIONS preflight request for /get_nutri")
         response = app.make_default_options_response()
-        # Headers are largely handled by Flask-CORS, but you can customize here if needed
-        # response.headers["Access-Control-Allow-Origin"] = "*" # Let Flask-CORS handle this based on config
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization" # Adjust as needed
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         return response
 
     # --- POST Request Handling ---
-    if request.method == "POST":
-        logger.info("Received POST request for /get_nutri")
+    data = request.get_json(silent=True)
+    logger.info("Received POST request for /get_nutri, data=%s", data)
 
-        if not gemini_api_key:
-             logger.error("Cannot process request: GEMINI_API_KEY is not configured.")
-             return jsonify({"error": "Server configuration error: API key missing."}), 500
+    if not gemini_api_key:
+        logger.error("Cannot process request: GEMINI_API_KEY is not configured.")
+        return jsonify({"error": "Server configuration error: API key missing."}), 500
 
-        # --- Input Validation ---
-        if not request.is_json:
-            logger.warning("Request is not JSON")
-            return jsonify({"error": "Request body must be JSON"}), 400
+    if not data:
+        logger.warning("Request body must be JSON")
+        return jsonify({"error": "Request body must be JSON"}), 400
 
-        data = request.get_json()
-        logger.debug(f"Received request data: {data}")
+    ingredients_string = data.get("ingredients_string", "").strip()
+    if not ingredients_string:
+        logger.warning("Missing or invalid 'ingredients_string'")
+        return jsonify({
+            "error": "Missing or invalid 'ingredients_string'. Expected: 'ingredients: (name1, qty1 g/ml), ...'"
+        }), 400
 
-        ingredients_string = data.get('ingredients_string')
-        if not ingredients_string or not isinstance(ingredients_string, str) or not ingredients_string.strip():
-            logger.warning("Missing or invalid 'ingredients_string' in request body")
-            return jsonify({"error": "Missing or invalid 'ingredients_string' in request body. Expected format: 'ingredients: (name1, qty1 g/ml), ...'"}), 400
+    # Optional: warn if format doesn’t start with “ingredients:”
+    if not ingredients_string.lower().startswith("ingredients:"):
+        logger.warning("ingredients_string does not start with 'ingredients:'")
 
-        # Basic check if the input looks roughly correct
-        if not ingredients_string.lower().startswith("ingredients:"):
-             logger.warning(f"Input string does not start with 'ingredients:': {ingredients_string}")
-             # Decide if this is a hard error or just a warning
-             # return jsonify({"error": "Invalid format: 'ingredients_string' must start with 'ingredients:'"}), 400
+    # --- Prepare Prompt for Gemini ---
+    user_prompt = f"User request: {ingredients_string}"
+    full_prompt = [NUTRI_SYSTEM_PROMPT, user_prompt]
 
+    # --- Call Gemini API via the new Google Gen AI SDK ---
+    try:
+        # Configure once (if not already done elsewhere)
+        genai.configure(api_key=gemini_api_key)
 
-        # --- Prepare Prompt for Gemini ---
-        user_prompt = f"User request: {ingredients_string.strip()}"
-        full_prompt = [NUTRI_SYSTEM_PROMPT, user_prompt] # Use list format for multi-turn or clearer separation
+        # Instantiate client and call the model
+        client = genai.Client(api_key=gemini_api_key)
+        response = client.models.generate_content(
+            model="gemini-1.5-flash-latest",
+            contents=full_prompt
+        )
 
-        # --- Call Gemini API ---
-        try:
-            logger.debug("Sending request to Gemini API...")
-            # Use a model suitable for complex instruction following and JSON generation
-            # gemini-pro might be better than flash for stricter JSON, but test performance
-            # model = genai.GenerativeModel('gemini-pro') # Or 'gemini-1.5-flash', etc.
-            model = genai.GenerativeModel('gemini-1.5-flash-latest') # Or specific version if needed
+        if not response or not getattr(response, "text", None):
+            logger.error("Empty response from Gemini API")
+            raise ValueError("Empty response received from Gemini API")
 
-            response = model.generate_content(full_prompt)
+        # --- Parse and Validate Response ---
+        nutrition_data = parse_nutri_response(response.text)
+        logger.info("Successfully generated and parsed nutrition profile.")
+        return jsonify(nutrition_data), 200
 
-            logger.debug(f"Raw Gemini response received: {response.text[:500]}...") # Log start of response
+    except (ValueError, TypeError, json.JSONDecodeError) as parse_err:
+        logger.error("Error processing or parsing Gemini response: %s", parse_err, exc_info=True)
+        return jsonify({"error": f"Failed to process nutrition data: {parse_err}"}), 500
 
-            if not response or not response.text:
-                logger.error("Received empty response from Gemini API.")
-                raise ValueError("Empty response received from Gemini API")
+    except Exception as e:
+        logger.error("An unexpected error occurred in /get_nutri: %s", e, exc_info=True)
+        return jsonify({"error": f"An unexpected error occurred: {e}"}), 500
 
-            # --- Parse and Validate Response ---
-            nutrition_data = parse_nutri_response(response.text)
-
-            logger.info("Successfully generated and parsed nutrition profile.")
-            return jsonify(nutrition_data), 200
-
-        except (ValueError, TypeError, json.JSONDecodeError) as parse_err:
-             # Errors during parsing or validation
-             logger.error(f"Error processing or parsing Gemini response: {parse_err}", exc_info=True)
-             return jsonify({"error": f"Failed to process nutrition data: {parse_err}"}), 500
-        except Exception as e:
-            # Catch-all for other potential errors (API call issues, etc.)
-            logger.error(f"An unexpected error occurred in /get_nutri: {e}", exc_info=True)
-            # Check for specific API errors if the library provides them
-            # For example: if isinstance(e, google.api_core.exceptions.GoogleAPIError): ...
-            return jsonify({"error": f"An unexpected error occurred: {e}"}), 500
-
-    # Should not be reached if methods are only POST/OPTIONS
-    return jsonify({"error": "Method not allowed"}), 405
 
 
 
