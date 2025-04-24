@@ -15,8 +15,7 @@ load_dotenv()
 
 app = Flask(__name__)
 # Configure CORS securely for your specific frontend origins
-allowed_origins = os.environ.get("ALLOWED_ORIGINS", "https://bawarchi-aignite.vercel.app,http://localhost:8080").split(',')
-CORS(app, resources={r"/get_nutri": {"origins": allowed_origins}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": {"https://bawarchi-aignite.vercel.app","http://localhost:8080"}}}, supports_credentials=True)
 
 # --- Basic Logging Setup ---
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
