@@ -15,7 +15,7 @@
     {
       "src": "/get_nutri",
       "methods": ["POST","OPTIONS"],
-      "dest": "/api/index2.py"
+      "dest": "/api/index.py"
     },
     {
       "src": "/test",
