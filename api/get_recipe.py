@@ -94,36 +94,26 @@ Reject and do not respond to anything unrelated to food or recipes. No conversat
 
 def parse_gemini_response(response_text):
     try:
-        # logger.debug(f"Raw response text to parse: {response_text}")
+
+        logger.debug(f"Raw response text to parse: {response_text}")
         response_text = re.sub(r'^```json\s*|\s*```$', '', response_text, flags=re.MULTILINE)
         response_text = response_text.strip()
         print(response_text)
-
-        recipe_match = re.search(r"\{\s*\"step 1\".*?(?=\{\s*\"nutritional_info\"|\Z)", response_text, re.DOTALL)
-        nutrition_match = re.search(r"\{\s*\"nutritional_info\".*?\}", response_text, re.DOTALL)
-
-        recipe_dict = {}
-        if recipe_match:
-            json_like_str = recipe_match.group().strip()
+        match = re.search(r"\{\s*\"step 1\".*\}", response_text, re.DOTALL)
+        if match:
+            json_like_str = match.group()
             try:
+                # Try using ast.literal_eval first (handles tuples)
                 recipe_dict = ast.literal_eval(json_like_str)
             except (SyntaxError, ValueError):
+                # Fallback to json.loads if ast fails
                 recipe_dict = json.loads(json_like_str.replace("(", "[").replace(")", "]"))
         else:
-            print("No recipe steps JSON object found in response_text.")
-
-        nutrition_info = {}
-        if nutrition_match:
-            nutrition_str = nutrition_match.group().strip()
-            try:
-                nutrition_info = json.loads(nutrition_str)
-            except (SyntaxError, ValueError):
-                print("Error parsing nutritional info JSON.")
-        else:
-            print("No nutritional info JSON object found in response_text.")
+            print("No JSON object found in response_text.")
+            recipe_dict = {}
 
         if not isinstance(recipe_dict, dict):
-            raise ValueError(f"Parsed recipe steps is not a dictionary: {type(recipe_dict)}")
+            raise ValueError(f"Parsed response is not a dictionary: {type(recipe_dict)}")
 
         for step, content in recipe_dict.items():
             if not isinstance(content, dict):
@@ -133,18 +123,28 @@ def parse_gemini_response(response_text):
             if missing_keys:
                 raise ValueError(f"Step {step} missing required keys: {missing_keys}")
 
-        if not isinstance(nutrition_info, dict) or "nutritional_info" not in nutrition_info:
-            raise ValueError(f"Parsed nutritional info is not a valid dictionary: {nutrition_info}")
-
-        return recipe_dict, nutrition_info
-
+        return recipe_dict
     except Exception as e:
-        # logger.error(f"Error parsing response: {str(e)}", exc_info=True)
-        print(f"Error parsing response: {str(e)}")
+        logger.error(f"Error parsing response: {str(e)}", exc_info=True)
         raise
+
 
 @app.route("/get_recipe", methods=["POST", "OPTIONS"])
 def get_gemini_response(prompt_text=None, client=None, image_file=None, image_url=None):
+    # data = request.json  # Uses Flask's `request`, not the parameter
+    ...
+    """
+    Get a recipe from Gemini API using text and/or image input.
+
+    Parameters:
+        prompt_text (str): Text prompt describing the image or recipe idea.
+        client: Gemini client instance.
+        image_file: File-like object (e.g., from frontend upload).
+        image_url (str): URL to the image.
+
+    Returns:
+        str: Gemini-generated response or structured JSON error.
+    """
     # Handle CORS preflight
     if request.method == "OPTIONS":  # ADDED — handle preflight
         response = app.make_default_options_response()
@@ -152,16 +152,16 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
         response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return response
-
+      
     data = request.json
     prompt_text = data.get('user_prompt', '').strip()
     if len(prompt_text.strip().split()) <= 2:
-        prompt_text = f"Generate the recipe for {prompt_text.strip()} and provide accurate measurements in grams and time in minutes, also provide nutritional information."
+        prompt_text = f"Generate the recipe for {prompt_text.strip()} and provide accurate measurements in grams and time in minutes."
 
     image_url = data.get('image_url')
     try:
         print(f"Initializing Gemini API...")
-        # client = genai.Client(api_key=gemini_api_key) # Assuming genai is imported
+        client = genai.Client(api_key=gemini_api_key)
 
         contents = [SYSTEM_PROMPT, ]
 
@@ -174,66 +174,42 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
         if image_url:
             print(f"Downloading image from URL: {image_url}")
             image_data = requests.get(image_url)
-            # image_part = types.Part.from_bytes(data=image_data.content, mime_type="image/jpeg") # Assuming types is imported
-            contents.append({"mime_type": "image/jpeg", "data": image_data.content}) # Mocking types.Part
+            image_part = types.Part.from_bytes(data=image_data.content, mime_type="image/jpeg")
+            contents.append(image_part)
 
         # Handle image from file-like object
-        elif request.files.get('image_file'):
-            image_file = request.files['image_file']
+        elif image_file:
             print("Reading uploaded image file...")
             image_bytes = image_file.read()
-            # image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg") # Assuming types is imported
-            contents.append({"mime_type": "image/jpeg", "data": image_bytes}) # Mocking types.Part
+            image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
+            contents.append(image_part)
 
         if not contents:
             raise ValueError("No prompt_text or image provided to Gemini API.")
 
         print(f"Sending content to Gemini API: {contents}")
-        # Mocking the Gemini API response
-        mock_response_text = """
-        ```json
-        {
-          "step 1": { "procedure": "Preheat oven.", "measurements": [("flour", "100g")], "time": (5, 10) },
-          "step 2": { "procedure": "Mix ingredients.", "measurements": [("sugar", "50g"), ("milk", "100ml")], "time": (10, 15) }
-        }
-        {
-          "nutritional_info": {
-            "calories": 200,
-            "protein": 5.0,
-            "carbohydrates": 30.0,
-            "fat": 8.0,
-            "fiber": 2.0,
-            "sugar": 15.0
-          }
-        }
-        ```
-        """
-        # response = client.models.generate_content(model="gemini-2.0-flash-exp", contents=contents)
-        response = type('Response', (), {'text': mock_response_text})() # Mock response
+        response = client.models.generate_content(model="gemini-2.0-flash-exp", contents=contents)
 
-        print(f"Raw Gemini response: {response.text}")
+        print(f"Raw Gemini response: {response}")
         if not response or not response.text:
             raise ValueError("Empty response from Gemini API")
 
-        recipe_data_dict, nutrition_info_dict = parse_gemini_response(response.text)
+        recipe_data_dict = parse_gemini_response(response.text)
+
 
     except Exception as e:
         print(f"Error in get_gemini_response: {str(e)}")
-        return jsonify({
-            "steps": {
-                "step 1": {
-                    "procedure": "Error getting recipe from Gemini API. Please try again later.",
-                    "measurements": [],
-                    "time": (0, 0)
-                }
-            },
-            "nutrition": {}
+        return json.dumps({
+            "step 1": {
+                "procedure": "Error getting recipe from Gemini API. Please try again later.",
+                "measurements": [],
+                "time": (0, 0)
+            }
         })
 
     print("---------------------------------------------------")
-    print("Recipe Steps:", recipe_data_dict)
-    print("Nutritional Info:", nutrition_info_dict)
-    return jsonify({"steps": recipe_data_dict, "nutrition": nutrition_info_dict})
+    print(recipe_data_dict)
+    return jsonify(recipe_data_dict)
 
 
 # def parse_gemini_response(response_text):
