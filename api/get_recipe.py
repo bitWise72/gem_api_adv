@@ -170,7 +170,6 @@ def get_nutrition_profile():
     """
     # --- CORS Preflight Handling ---
     if request.method == "OPTIONS":
-        logger.debug("Handling OPTIONS preflight request for /get_nutri")
         response = app.make_default_options_response()
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
@@ -178,59 +177,54 @@ def get_nutrition_profile():
 
     # --- POST Request Handling ---
     data = request.get_json(silent=True)
-    logger.info("Received POST request for /get_nutri, data=%s", data)
+    logger.info("Received POST to /get_nutri: %s", data)
 
     if not gemini_api_key:
-        logger.error("Cannot process request: GEMINI_API_KEY is not configured.")
+        logger.error("GEMINI_API_KEY not set")
         return jsonify({"error": "Server configuration error: API key missing."}), 500
 
     if not data:
-        logger.warning("Request body must be JSON")
         return jsonify({"error": "Request body must be JSON"}), 400
 
     ingredients_string = data.get("ingredients_string", "").strip()
     if not ingredients_string:
-        logger.warning("Missing or invalid 'ingredients_string'")
         return jsonify({
-            "error": "Missing or invalid 'ingredients_string'. Expected: 'ingredients: (name1, qty1 g/ml), ...'"
+            "error": "Missing or invalid 'ingredients_string'. Expected format: 'ingredients: (name1, qty1 g/ml), ...'"
         }), 400
 
-    # Optional: warn if format doesn’t start with “ingredients:”
+    # (optional) warn if it doesn't start with the literal "ingredients:"
     if not ingredients_string.lower().startswith("ingredients:"):
         logger.warning("ingredients_string does not start with 'ingredients:'")
 
-    # --- Prepare Prompt for Gemini ---
+    # Build the Gemini prompt
     user_prompt = f"User request: {ingredients_string}"
     full_prompt = [NUTRI_SYSTEM_PROMPT, user_prompt]
 
-    # --- Call Gemini API via the new Google Gen AI SDK ---
     try:
-        # Configure once (if not already done elsewhere)
-        genai.configure(api_key=gemini_api_key)
-
-        # Instantiate client and call the model
+        # Instantiate the new GenAI client (Gemini 2.0)
         client = genai.Client(api_key=gemini_api_key)
+
+        # Call the model
         response = client.models.generate_content(
-            model="gemini-1.5-flash-latest",
+            model="gemini-2.0-flash-exp",
             contents=full_prompt
         )
 
         if not response or not getattr(response, "text", None):
-            logger.error("Empty response from Gemini API")
-            raise ValueError("Empty response received from Gemini API")
+            raise ValueError("Empty response from Gemini API")
 
-        # --- Parse and Validate Response ---
+        # Parse and return
         nutrition_data = parse_nutri_response(response.text)
-        logger.info("Successfully generated and parsed nutrition profile.")
         return jsonify(nutrition_data), 200
 
     except (ValueError, TypeError, json.JSONDecodeError) as parse_err:
-        logger.error("Error processing or parsing Gemini response: %s", parse_err, exc_info=True)
+        logger.error("Parsing error in /get_nutri: %s", parse_err, exc_info=True)
         return jsonify({"error": f"Failed to process nutrition data: {parse_err}"}), 500
 
     except Exception as e:
-        logger.error("An unexpected error occurred in /get_nutri: %s", e, exc_info=True)
+        logger.error("Unexpected error in /get_nutri: %s", e, exc_info=True)
         return jsonify({"error": f"An unexpected error occurred: {e}"}), 500
+
 
 
 
