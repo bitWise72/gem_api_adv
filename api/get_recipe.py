@@ -50,8 +50,9 @@ When providing recipes:
 Structure your response in the following format. Ensure that you strictly adhere to this format so that the response can be easily parsed programmatically:
 
 {
-  "step 1": { "procedure": <string>, "measurements": [(ingredient1, measurement1), ...], "time": (min_time, max_time) },
-  "step 2": { "procedure": <string>, "measurements": [...], "time": (min_time, max_time)},
+  "step 1": { "procedure": <string>, "measurements": [(ingredient1, measurement1), ...], "time": (min_time, max_time), "name" : <string :name of recipe either based on text prompt or image>},
+  "step 2": { "procedure": <string>, "measurements": [...], "time": (min_time, max_time), "name" : <string :name of recipe either based on text prompt or image>},
+  "step 3": { "procedure": <string>, "measurements": [...], "time": (min_time, max_time), "name" : <string :name of recipe either based on text prompt or image>},
   ...
 }
 
