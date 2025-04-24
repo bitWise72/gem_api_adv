@@ -138,7 +138,7 @@ def parse_nutri_response(response_text):
     return nutrition_data
 
 # --- API Endpoint for Nutritional Analysis ---
-@app.route("/get_nutri", methods=["POST"])
+@app.route("/get_nutri", methods=["POST","OPTIONS"])
 def get_nutrition_profile():
     """
     API endpoint to get nutritional information for a list of ingredients.
