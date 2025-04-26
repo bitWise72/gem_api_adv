@@ -78,6 +78,7 @@ Based on this input, generate a JSON response containing the nutritional informa
     "fiber": "<value> g",
     "sugar": "<value> g", // Specify 'added sugar' or 'total sugar' if possible, otherwise just 'sugar'
     "vitamins": "<list or description of key vitamins>", // e.g., "Rich in Vitamin C, Vitamin K" or specific amounts if reliably known
+    "fat": "<value> g", // Include total fat, and if possible, specify saturated or not
     "error": null // Use this field to indicate issues, e.g., "Could not analyze" or "Ambiguous quantity"
   },
   "ingredient_name_2": {
