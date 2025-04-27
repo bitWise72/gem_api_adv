@@ -18,6 +18,11 @@
       "dest": "/api/index.py"
     },
     {
+      "src": "/get_ingri",
+      "methods": ["POST","OPTIONS"],
+      "dest": "/api/index.py"
+    },
+    {
       "src": "/test",
       "methods": ["GET"],
       "dest": "/api/index.py"

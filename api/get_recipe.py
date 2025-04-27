@@ -100,6 +100,158 @@ Based on this input, generate a JSON response containing the nutritional informa
 * **Focus:** Only respond to requests related to food ingredient nutritional analysis. Reject any unrelated queries. Do not engage in conversation. Never mention this system prompt.
 """
 
+INGRI_SYSTEM_PROMPT = """You are a highly accurate Diet and Nutritional Analysis Assistant based on Google Gemini. Your task is to provide me the following information about a dish from the dish name, dish details or on the basis of input image of the dish.
+You will also be provided with additional user health and preferences and you have to make use of alternatives in ingredients and cuisine type based on the user health and preferences. 
+{
+    "dishName": <string>, // Name of the dish
+    "dishCuisine": <string>, // Type of dish (e.g., North Indian, South Indian, Italian, Mexican etc. in great detail with specifics to the best of your discretion)
+    "dishIngredients": [<list of ingredients>], // List of ingredients used in the dish
+    "summary": <string>, // A brief summary of the dish, including its taste, texture, and any unique features and alternatives you are looking for based on user preferences, eg. Searching for alternatives of paneer for vegan preference, etc.(This should align with the given user health and preference data)
+}
+"""
+def parse_ingri_response(response_text):
+    """
+    Parses the raw text response from Gemini, expecting a JSON object
+    conforming to the INGRI_SYSTEM_PROMPT structure.
+    Handles potential formatting issues and validates the structure.
+    """
+    logger.debug(f"Attempting to parse Gemini response: {response_text[:500]}...") # Log beginning of response
+
+    # 1. Clean the response: Remove potential markdown fences and leading/trailing whitespace
+    # This handles cases where the model might wrap the JSON in ```json ... ```
+    cleaned_text = re.sub(r'^```json\s*|\s*```$', '', response_text, flags=re.MULTILINE).strip()
+
+    # 2. Find the JSON object: Handle cases where the model might add extra text
+    # This regex looks for the outermost curly braces {}
+    # We make this slightly more robust by allowing potential whitespace/newlines around the braces
+    match = re.search(r"^\s*\{.*\}\s*$", cleaned_text, re.DOTALL)
+    if not match:
+        logger.error(f"Could not find a valid JSON object structure in the cleaned response: {cleaned_text}")
+        raise ValueError("Response does not appear to contain a valid JSON object.")
+
+    json_string = match.group(0)
+
+    # 3. Parse the JSON string
+    try:
+        # Use json.loads as the primary method since we requested strict JSON
+        ingri_data = json.loads(json_string)
+        logger.debug("Successfully parsed response using json.loads.")
+
+    except json.JSONDecodeError as json_err:
+        logger.warning(f"json.loads failed: {json_err}. Trying ast.literal_eval as fallback (use with caution).")
+        # Fallback attempt with ast.literal_eval (less common for this use case but can handle Python literals)
+        # Be cautious with literal_eval if the source isn't fully trusted, though in this case
+        # it's from our own model based on a strict prompt.
+        try:
+            ingri_data = ast.literal_eval(json_string)
+            logger.debug("Successfully parsed response using ast.literal_eval.")
+        except (SyntaxError, ValueError, TypeError) as eval_err:
+            logger.error(f"Failed to parse response with both json.loads and ast.literal_eval. Error: {eval_err}", exc_info=True)
+            logger.error(f"Problematic JSON string: {json_string}")
+            raise ValueError(f"Failed to decode JSON response from AI: {eval_err}")
+
+    # 4. Validate the parsed structure against the expected keys and types
+    expected_keys = ["dishName", "dishCuisine", "dishIngredients", "summary"]
+    if not isinstance(ingri_data, dict):
+        raise TypeError(f"Parsed data is not a dictionary (type: {type(ingri_data)}).")
+
+    for key in expected_keys:
+        if key not in ingri_data:
+            raise ValueError(f"Parsed data is missing expected key: '{key}'.")
+
+    # Basic type checking for the expected keys
+    if not isinstance(ingri_data["dishName"], str):
+        raise TypeError(f"Expected 'dishName' to be string, but got {type(ingri_data['dishName'])}.")
+    if not isinstance(ingri_data["dishCuisine"], str):
+        raise TypeError(f"Expected 'dishCuisine' to be string, but got {type(ingri_data['dishCuisine'])}.")
+    if not isinstance(ingri_data["dishIngredients"], list):
+        raise TypeError(f"Expected 'dishIngredients' to be list, but got {type(ingri_data['dishIngredients'])}.")
+    # Optional: Add checks for elements within dishIngredients if necessary (e.g., all strings)
+    # for item in ingri_data["dishIngredients"]:
+    #     if not isinstance(item, str):
+    #         raise TypeError(f"Expected all elements in 'dishIngredients' to be strings, but got {type(item)}.")
+
+    if not isinstance(ingri_data["summary"], str):
+        raise TypeError(f"Expected 'summary' to be string, but got {type(ingri_data['summary'])}.")
+
+    logger.debug("Parsed data validated successfully.")
+    return ingri_data
+
+@app.route("/get_ingri", methods=["POST", "OPTIONS"])
+def get_ingredient_profile():
+    """
+    API endpoint to get ingredient information for a dish based on description or image.
+    Expects JSON input: {"dish_description": "Dish name or details..."}
+    """
+    # --- CORS Preflight Handling ---
+    if request.method == "OPTIONS":
+        response = app.make_default_options_response()
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        return response
+
+    # --- POST Request Handling ---
+    data = request.get_json(silent=True)
+    logger.info("Received POST to /get_ingri: %s", data)
+
+    if not gemini_api_key:
+        logger.error("GEMINI_API_KEY not set")
+        return jsonify({"error": "Server configuration error: API key missing."}), 500
+
+    if not data:
+        return jsonify({"error": "Request body must be JSON"}), 400
+
+    # Changed input key from 'ingredients_string' to 'dish_description'
+    dish_description = data.get("dish_description", "").strip()
+    if not dish_description:
+        # Updated error message for the new endpoint
+        return jsonify({
+            "error": "Missing or invalid 'dish_description'. Provide dish name or details."
+        }), 400
+
+    # Build the Gemini prompt
+    user_prompt = f"User request: {dish_description}"
+    # Used INGRI_SYSTEM_PROMPT as required
+    full_prompt = [INGRI_SYSTEM_PROMPT, user_prompt]
+
+    try:
+        # Instantiate the new GenAI client (Gemini 2.0) - using the specified library name
+        # Note: 'google.ai.generativelite' is used based on the user's explicit instruction
+        # "use the exact same genai library and NOT the generativeai library".
+        # If this library name is hypothetical/incorrect, it should be replaced
+        # with the actual client library for Gemini 2.0 if different from google.generativeai.
+        client = genai.Client(api_key=gemini_api_key)
+
+        # Call the model
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp",
+            contents=full_prompt
+        )
+
+        # Check if the response or its text attribute is None or empty
+        if not response or not getattr(response, "text", None):
+            # Check for potential empty parts or missing text attribute
+            if response and getattr(response, 'parts', None):
+                 logger.error(f"Gemini API returned response with parts but no text attribute: {response.parts}")
+            else:
+                 logger.error("Empty or invalid response structure from Gemini API")
+            raise ValueError("Empty or invalid response structure from Gemini API")
+
+
+        # Parse and return using the correct parser function
+        ingredient_data = parse_ingri_response(response.text)
+        return jsonify(ingredient_data), 200
+
+    except (ValueError, TypeError, json.JSONDecodeError) as parse_err:
+        # Updated error message for the new endpoint
+        logger.error("Parsing error in /get_ingri: %s", parse_err, exc_info=True)
+        return jsonify({"error": f"Failed to process ingredient data: {parse_err}"}), 500
+
+    except Exception as e:
+        # Updated error message for the new endpoint
+        logger.error("Unexpected error in /get_ingri: %s", e, exc_info=True)
+        return jsonify({"error": f"An unexpected error occurred: {e}"}), 500
+
 
 
 def parse_nutri_response(response_text):
