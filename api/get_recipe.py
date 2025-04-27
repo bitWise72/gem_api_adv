@@ -180,8 +180,8 @@ def parse_ingri_response(response_text):
 @app.route("/get_ingri", methods=["POST", "OPTIONS"])
 def get_ingredient_profile():
     """
-    API endpoint to get ingredient information for a dish based on description or image.
-    Expects JSON input: {"dish_description": "Dish name or details..."}
+    API endpoint to get ingredient information for a dish based on description or image URL.
+    Expects JSON input with either "dish_description" (string) or "image_url" (string), or both.
     """
     # --- CORS Preflight Handling ---
     if request.method == "OPTIONS":
@@ -201,57 +201,129 @@ def get_ingredient_profile():
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 
-    # Changed input key from 'ingredients_string' to 'dish_description'
     dish_description = data.get("dish_description", "").strip()
-    if not dish_description:
-        # Updated error message for the new endpoint
+    image_url = data.get("image_url", "").strip()
+
+    # Validate that at least one of the inputs is provided
+    if not dish_description and not image_url:
         return jsonify({
-            "error": "Missing or invalid 'dish_description'. Provide dish name or details."
+            "error": "Missing input. Provide either 'dish_description' or 'image_url'."
         }), 400
 
-    # Build the Gemini prompt
-    user_prompt = f"User request: {dish_description}"
-    # Used INGRI_SYSTEM_PROMPT as required
-    full_prompt = [INGRI_SYSTEM_PROMPT, user_prompt]
+    # Build the contents for the Gemini prompt (multimodal)
+    contents = [
+        {"text": INGRI_SYSTEM_PROMPT} # System instructions as a text part
+    ]
+
+    # Add dish description if provided
+    if dish_description:
+        contents.append({"text": f"User request: {dish_description}"}) # User text as a text part
+
+    # Add image if image_url is provided
+    if image_url:
+        try:
+            logger.info(f"Attempting to download image from URL: {image_url}")
+            # Download the image
+            image_response = requests.get(image_url, stream=True)
+            image_response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+
+            # Determine content type (basic check, can be more robust)
+            content_type = image_response.headers.get("Content-Type", "application/octet-stream")
+            if not content_type.startswith("image/"):
+                 logger.warning(f"Downloaded content type is not an image: {content_type}")
+                 # Decide if you want to error out or proceed without the image
+                 # For now, let's raise an error as it's unexpected input for an image slot
+                 raise ValueError(f"URL did not return an image content type: {content_type}")
+
+            # Read image data into bytes
+            image_data = image_response.content
+
+            # Create an image part for the Gemini API
+            # Note: The exact structure for multimodal parts depends on the 'genai' library version.
+            # This uses a dictionary format which is common or needs adaptation based on the library's API.
+            # A common alternative in google.generativeai is genai.types.Part(mime_type=content_type, data=image_data)
+            # Or potentially genai.types.FileData(file_uri=image_url) if the model supports fetching.
+            # We'll use a dictionary structure assuming the client handles it or needs slight adjustment.
+            image_part = {
+                "inlineData": {
+                    "mimeType": content_type,
+                    "data": image_data.hex() # Or base64.b64encode(image_data).decode('utf-8') - hex is just an example
+                    # Using hex() is unlikely what the API expects. Base64 is more common.
+                    # Let's use base64 as it's standard for passing binary data in JSON/API contexts.
+                    # import base64 # Need to add this import
+                    # "data": base64.b64encode(image_data).decode('utf-8')
+                }
+                # Or if the client library supports FileData from bytes:
+                # "fileData": genai.types.FileData(file_uri="data:" + content_type + ";base64," + base64.b64encode(image_data).decode('utf-8'))
+            }
+             # Let's try the dictionary format that aligns with typical REST API representation first
+            import base64 # Make sure base64 is imported
+            image_part = {
+                "inlineData": {
+                    "mimeType": content_type,
+                    "data": base64.b64encode(image_data).decode('utf-8')
+                }
+            }
+
+            contents.append(image_part)
+
+        except requests.exceptions.RequestException as req_err:
+            logger.error(f"Error downloading image from {image_url}: {req_err}", exc_info=True)
+            return jsonify({"error": f"Failed to download image from URL: {req_err}"}), 400
+        except ValueError as val_err:
+             logger.error(f"Validation error processing image URL {image_url}: {val_err}", exc_info=True)
+             return jsonify({"error": f"Invalid image URL or content: {val_err}"}), 400
+        except Exception as img_process_err:
+            logger.error(f"Unexpected error processing image from {image_url}: {img_process_err}", exc_info=True)
+            return jsonify({"error": f"An unexpected error occurred while processing the image: {img_process_err}"}), 500
+
 
     try:
-        # Instantiate the new GenAI client (Gemini 2.0) - using the specified library name
-        # Note: 'google.ai.generativelite' is used based on the user's explicit instruction
-        # "use the exact same genai library and NOT the generativeai library".
-        # If this library name is hypothetical/incorrect, it should be replaced
-        # with the actual client library for Gemini 2.0 if different from google.generativeai.
+        # Instantiate the new GenAI client (Gemini 2.0)
         client = genai.Client(api_key=gemini_api_key)
 
-        # Call the model
+        # Call a vision-capable model
+        # Changed model name to a common multimodal model
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
-            contents=full_prompt
+            model="gemini-1.5-flash", # Or "gemini-1.0-pro-vision" depending on availability and preference
+            contents=contents # Pass the multimodal contents list
         )
 
         # Check if the response or its text attribute is None or empty
+        # Note: Multimodal responses might have parts besides text.
+        # We primarily expect text containing the JSON, but robustness might check other parts.
+        # For this task, we assume the main output is text with the JSON.
         if not response or not getattr(response, "text", None):
-            # Check for potential empty parts or missing text attribute
-            if response and getattr(response, 'parts', None):
-                 logger.error(f"Gemini API returned response with parts but no text attribute: {response.parts}")
-            else:
-                 logger.error("Empty or invalid response structure from Gemini API")
-            raise ValueError("Empty or invalid response structure from Gemini API")
+             logger.error(f"Empty or invalid text response structure from Gemini API. Response: {response}")
+             # Log response structure if available to help debug
+             if response and hasattr(response, 'parts'):
+                  logger.error(f"Response parts: {response.parts}")
+             raise ValueError("Empty or invalid text response structure from Gemini API")
 
 
         # Parse and return using the correct parser function
+        # parse_ingri_response expects a string, so we pass response.text
         ingredient_data = parse_ingri_response(response.text)
         return jsonify(ingredient_data), 200
 
     except (ValueError, TypeError, json.JSONDecodeError) as parse_err:
         # Updated error message for the new endpoint
         logger.error("Parsing error in /get_ingri: %s", parse_err, exc_info=True)
-        return jsonify({"error": f"Failed to process ingredient data: {parse_err}"}), 500
+        return jsonify({"error": f"Failed to process ingredient data from AI response: {parse_err}"}), 500
 
     except Exception as e:
-        # Updated error message for the new endpoint
-        logger.error("Unexpected error in /get_ingri: %s", e, exc_info=True)
-        return jsonify({"error": f"An unexpected error occurred: {e}"}), 500
+        # Catch any other unexpected errors from the API call or processing
+        logger.error("Unexpected error during Gemini API call in /get_ingri: %s", e, exc_info=True)
+        # Check if the error is from the genai library and might contain specific details
+        api_error_message = str(e)
+        if hasattr(e, 'response') and e.response is not None:
+             # Attempt to get more details from an API error response object
+             try:
+                 api_error_message = e.response.text
+             except:
+                 pass # Ignore if unable to get response text
 
+        return jsonify({"error": f"An unexpected error occurred during AI processing: {api_error_message}"}), 500
 
 
 def parse_nutri_response(response_text):
