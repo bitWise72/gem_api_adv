@@ -23,7 +23,23 @@ from flask_cors import CORS
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": {"https://bawarchi-aignite.vercel.app","http://localhost:8080"}}}, supports_credentials=True)
+
+allowed_origins = [
+    "https://bawarchi-aignite.vercel.app",
+    "http://localhost:8080",
+    "http://localhost:3000"
+]
+
+CORS(app, resources={
+    r"/*": {
+        "origins": allowed_origins,
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }
+})
+
+# CORS(app, resources={r"/*": {"origins": {"https://bawarchi-aignite.vercel.app","http://localhost:8080"}}}, supports_credentials=True)
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
