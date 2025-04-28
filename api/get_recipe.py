@@ -393,10 +393,11 @@ def get_nutrition_profile():
     Expects JSON input: {"ingredients_string": "ingredients: (ingr1, qty1), (ingr2, qty2),..."}
     """
     # --- CORS Preflight Handling ---
-    if request.method == "OPTIONS":
+    if request.method == "OPTIONS":  # ADDED — handle preflight
         response = app.make_default_options_response()
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return response
 
     # --- POST Request Handling ---
