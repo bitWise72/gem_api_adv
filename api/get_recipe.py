@@ -395,18 +395,17 @@ def get_nutrition_profile():
     # --- CORS Preflight Handling ---
     if request.method == "OPTIONS":
         response = app.make_default_options_response()
-        response.headers["Access-Control-Allow-Origin"] = "https://bawarchi-aignite.vercel.app"  # Allow your frontend origin
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         return response
 
     # --- POST Request Handling ---
     data = request.get_json(silent=True)
-    # logger.info("Received POST to /get_nutri: %s", data)
+    logger.info("Received POST to /get_nutri: %s", data)
 
-    # if not gemini_api_key:
-    #     logger.error("GEMINI_API_KEY not set")
-    #     return jsonify({"error": "Server configuration error: API key missing."}), 500
+    if not gemini_api_key:
+        logger.error("GEMINI_API_KEY not set")
+        return jsonify({"error": "Server configuration error: API key missing."}), 500
 
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
@@ -418,40 +417,36 @@ def get_nutrition_profile():
         }), 400
 
     # (optional) warn if it doesn't start with the literal "ingredients:"
-    # if not ingredients_string.lower().startswith("ingredients:"):
-    #     logger.warning("ingredients_string does not start with 'ingredients:'")
+    if not ingredients_string.lower().startswith("ingredients:"):
+        logger.warning("ingredients_string does not start with 'ingredients:'")
 
     # Build the Gemini prompt
-    # user_prompt = f"User request: {ingredients_string}"
-    # full_prompt = [NUTRI_SYSTEM_PROMPT, user_prompt]
+    user_prompt = f"User request: {ingredients_string}"
+    full_prompt = [NUTRI_SYSTEM_PROMPT, user_prompt]
 
     try:
         # Instantiate the new GenAI client (Gemini 2.0)
-        # client = genai.Client(api_key=gemini_api_key)
+        client = genai.Client(api_key=gemini_api_key)
 
         # Call the model
-        # response = client.models.generate_content(
-        #     model="gemini-2.0-flash-exp",
-        #     contents=full_prompt
-        # )
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp",
+            contents=full_prompt
+        )
 
-        # if not response or not getattr(response, "text", None):
-        #     raise ValueError("Empty response from Gemini API")
+        if not response or not getattr(response, "text", None):
+            raise ValueError("Empty response from Gemini API")
 
         # Parse and return
-        # nutrition_data = parse_nutri_response(response.text)
-        # Temporary mock response for testing CORS
-        nutrition_data = {"message": "Nutrition data fetched successfully!"}
-        response = jsonify(nutrition_data)
-        response.headers["Access-Control-Allow-Origin"] = "https://bawarchi-aignite.vercel.app" # Add the header here for the POST response as well
-        return response, 200
+        nutrition_data = parse_nutri_response(response.text)
+        return jsonify(nutrition_data), 200
 
     except (ValueError, TypeError, json.JSONDecodeError) as parse_err:
-        # logger.error("Parsing error in /get_nutri: %s", parse_err, exc_info=True)
+        logger.error("Parsing error in /get_nutri: %s", parse_err, exc_info=True)
         return jsonify({"error": f"Failed to process nutrition data: {parse_err}"}), 500
 
     except Exception as e:
-        # logger.error("Unexpected error in /get_nutri: %s", e, exc_info=True)
+        logger.error("Unexpected error in /get_nutri: %s", e, exc_info=True)
         return jsonify({"error": f"An unexpected error occurred: {e}"}), 500
 
 
