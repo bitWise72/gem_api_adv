@@ -416,7 +416,10 @@ def get_nutrition_profile():
     #     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     #     response.headers["Vary"] = "Origin" 
     #     return response
-
+    if request.method == "OPTIONS":
+        # flask_cors is configured globally to add CORS headers
+        # We just need to return a 2xx status code for the preflight to succeed
+        return '', 200  # Return an empty body with 200 OK status
     # --- POST Request Handling ---
     data = request.get_json(silent=True)
     logger.info("Received POST to /get_nutri: %s", data)
