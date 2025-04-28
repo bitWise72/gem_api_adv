@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 # Get API key from environment
 gemini_api_key = os.environ.get('GEMINI_API_KEY')
-
+nutri_api_key = os.environ.get('NUTRI_API_KEY')
 # if not DEFAULT_GEMINI_API_KEY:
 #     logger.warning("DEFAULT_GEMINI_API_KEY is not set in the environment.")
 
@@ -424,7 +424,7 @@ def get_nutrition_profile():
     data = request.get_json(silent=True)
     logger.info("Received POST to /get_nutri: %s", data)
 
-    if not gemini_api_key:
+    if not nutri_api_key:
         logger.error("GEMINI_API_KEY not set")
         return jsonify({"error": "Server configuration error: API key missing."}), 500
 
@@ -447,7 +447,7 @@ def get_nutrition_profile():
 
     try:
         # Instantiate the new GenAI client (Gemini 2.0)
-        client = genai.Client(api_key=gemini_api_key)
+        client = genai.Client(api_key=nutri_api_key)
 
         # Call the model
         response = client.models.generate_content(
