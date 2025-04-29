@@ -121,7 +121,8 @@ You will also be provided with additional user health and preferences and you ha
     "dishName": <string>, // Name of the dish
     "dishCuisine": <string>, // Type of dish (e.g., North Indian, South Indian, Italian, Mexican etc. in great detail with specifics to the best of your discretion)
     "dishIngredients": [<list of ingredients>], // List of ingredients used in the dish
-    "summary": <string>, // A brief summary of the dish, including its taste, texture, and any unique features and alternatives you are looking for based on user preferences, eg. Searching for alternatives of paneer for vegan preference, etc.(This should align with the given user health and preference data)
+    "summary": <string>, // This should contain 5 or 6 single line facts and ideas about the dish mentioned, each line should be atmost 60 characters long. The first point should be about the history and origin of the dish, the second should be about any health benefits of the dish, the third should be about how the dish and the ingredients you are suggesting would help the user in their health goals based specifically on their health preferences as priority or generl health advices  related to the dish ingredients you would suggest, the fourth should be about the taste and flavor of the dish, the fifth should be about any interesting fact about the dish, and the sixth should be about how to make the dish more healthy and nutritious.
+    )
 }
 """
 def parse_ingri_response(response_text):
@@ -300,7 +301,7 @@ def get_ingredient_profile():
         # Call a vision-capable model
         # Changed model name to a common multimodal model
         response = client.models.generate_content(
-            model="gemini-1.5-flash", # Or "gemini-1.0-pro-vision" depending on availability and preference
+            model="gemini-2.0-flash-001", # Or "gemini-1.0-pro-vision" depending on availability and preference
             contents=contents # Pass the multimodal contents list
         )
 
@@ -591,7 +592,7 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
             raise ValueError("No prompt_text or image provided to Gemini API.")
 
         print(f"Sending content to Gemini API: {contents}")
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=contents)
+        response = client.models.generate_content(model="gemini-2.0-flash-001", contents=contents)
 
         print(f"Raw Gemini response: {response}")
         if not response or not response.text:
