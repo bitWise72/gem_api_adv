@@ -169,24 +169,25 @@ def parse_ingri_response(response_text):
     # 4. Validate the parsed structure against the expected keys and types
     expected_keys = ["dishName", "dishCuisine", "dishIngredients", "summary"]
     if not isinstance(ingri_data, dict):
-        raise TypeError(f"Parsed data is not a dictionary (type: {type(ingri_data)}).")
+        raise TypeError(f"Parsed data is not a dict, got {type(ingri_data)}.")
 
     for key in expected_keys:
         if key not in ingri_data:
-            raise ValueError(f"Parsed data is missing expected key: '{key}'.")
+            raise ValueError(f"Missing expected key: '{key}'.")
 
-    # Basic type checking for the expected keys
+    # Coerce a list summary into a single string
+    summary = ingri_data["summary"]
+    if isinstance(summary, list):
+        # join list elements with spaces (or "\n" if you'd prefer line breaks)
+        ingri_data["summary"] = " ".join(str(s).strip() for s in summary)
+
+    # Now enforce types
     if not isinstance(ingri_data["dishName"], str):
         raise TypeError(f"Expected 'dishName' to be string, but got {type(ingri_data['dishName'])}.")
     if not isinstance(ingri_data["dishCuisine"], str):
         raise TypeError(f"Expected 'dishCuisine' to be string, but got {type(ingri_data['dishCuisine'])}.")
     if not isinstance(ingri_data["dishIngredients"], list):
         raise TypeError(f"Expected 'dishIngredients' to be list, but got {type(ingri_data['dishIngredients'])}.")
-    # Optional: Add checks for elements within dishIngredients if necessary (e.g., all strings)
-    # for item in ingri_data["dishIngredients"]:
-    #     if not isinstance(item, str):
-    #         raise TypeError(f"Expected all elements in 'dishIngredients' to be strings, but got {type(item)}.")
-
     if not isinstance(ingri_data["summary"], str):
         raise TypeError(f"Expected 'summary' to be string, but got {type(ingri_data['summary'])}.")
 
