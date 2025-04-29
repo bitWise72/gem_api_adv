@@ -451,7 +451,7 @@ def get_nutrition_profile():
 
         # Call the model
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model="gemini-2.0-flash-001",
             contents=full_prompt
         )
 
