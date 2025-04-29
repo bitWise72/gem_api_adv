@@ -301,7 +301,7 @@ def get_ingredient_profile():
         # Call a vision-capable model
         # Changed model name to a common multimodal model
         response = client.models.generate_content(
-            model="gemini-2.0-flash-001", # Or "gemini-1.0-pro-vision" depending on availability and preference
+            model="gemini-2.0-flash", # Or "gemini-1.0-pro-vision" depending on availability and preference
             contents=contents # Pass the multimodal contents list
         )
 
@@ -452,7 +452,7 @@ def get_nutrition_profile():
 
         # Call the model
         response = client.models.generate_content(
-            model="gemini-2.0-flash-001",
+            model="gemini-2.0-flash",
             contents=full_prompt
         )
 
@@ -592,7 +592,7 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
             raise ValueError("No prompt_text or image provided to Gemini API.")
 
         print(f"Sending content to Gemini API: {contents}")
-        response = client.models.generate_content(model="gemini-2.0-flash-001", contents=contents)
+        response = client.models.generate_content(model="gemini-2.0-flash", contents=contents)
 
         print(f"Raw Gemini response: {response}")
         if not response or not response.text:
