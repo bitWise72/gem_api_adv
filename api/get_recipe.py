@@ -116,19 +116,21 @@ Based on this input, generate a JSON response containing the nutritional informa
 """
 
 INGRI_SYSTEM_PROMPT = """You are a highly accurate Diet and Nutritional Analysis Assistant based on Google Gemini. Your task is to provide me the following information about a dish from the dish name, dish details or on the basis of input image of the dish.
-You will also be provided with additional user health and preferences and you have to make use of alternatives in ingredients and cuisine type based on the user health and preferences. 
+You will also be provided with additional user health and preferences and you have to make use of alternatives in ingredients and cuisine type based on the user health and preferences.
+Provide the output strictly in the following JSON format:
 {
     "dishName": <string>, // Name of the dish
     "dishCuisine": <string>, // Type of dish (e.g., North Indian, South Indian, Italian, Mexican etc. in great detail with specifics to the best of your discretion)
     "dishIngredients": [<list of ingredients>], // List of ingredients used in the dish
-    "summary": <string>, // This should contain 5 or 6 single line facts and ideas about the dish mentioned, each line should be atmost 60 characters long. The first point should be about the history and origin of the dish, the second should be about any health benefits of the dish, the third should be about how the dish and the ingredients you are suggesting would help the user in their health goals based specifically on their health preferences as priority or generl health advices  related to the dish ingredients you would suggest, the fourth should be about the taste and flavor of the dish, the fifth should be about any interesting fact about the dish, and the sixth should be about how to make the dish more healthy and nutritious.
-    )
+    "summary": <string>, // This should contain 5 or 6 single line facts and ideas about the dish mentioned, each line should be atmost 60 characters long. The first point should be about the history and origin of the dish, the second should be about any health benefits of the dish, the third should be about how the dish and the ingredients you are suggesting would help the user in their health goals based specifically on their health preferences as priority or generl health advices related to the dish ingredients you would suggest, the fourth should be about the taste and flavor of the dish, the fifth should be about any interesting fact about the dish, and the sixth should be about how to make the dish more healthy and nutritious.
+    "suggestedRecipes": [<list of strings>] // List of dishes that are typically served as accompaniments or complement the main dish (e.g., Roti for Butter Chicken, Cookies for Tea, Fried Rice for Chilli Chicken).
 }
 """
+
 def parse_ingri_response(response_text):
     """
     Parses the raw text response from Gemini, expecting a JSON object
-    conforming to the INGRI_SYSTEM_PROMPT structure.
+    conforming to the INGRI_SYSTEM_PROMPT structure, including suggestedRecipes.
     Handles potential formatting issues and validates the structure.
     """
     logger.debug(f"Attempting to parse Gemini response: {response_text[:500]}...") # Log beginning of response
@@ -167,7 +169,8 @@ def parse_ingri_response(response_text):
             raise ValueError(f"Failed to decode JSON response from AI: {eval_err}")
 
     # 4. Validate the parsed structure against the expected keys and types
-    expected_keys = ["dishName", "dishCuisine", "dishIngredients", "summary"]
+    # Added "suggestedRecipes" to the expected keys
+    expected_keys = ["dishName", "dishCuisine", "dishIngredients", "summary", "suggestedRecipes"]
     if not isinstance(ingri_data, dict):
         raise TypeError(f"Parsed data is not a dict, got {type(ingri_data)}.")
 
@@ -175,7 +178,7 @@ def parse_ingri_response(response_text):
         if key not in ingri_data:
             raise ValueError(f"Missing expected key: '{key}'.")
 
-    # Coerce a list summary into a single string
+    # Coerce a list summary into a single string if it's a list
     summary = ingri_data["summary"]
     if isinstance(summary, list):
         # join list elements with spaces (or "\n" if you'd prefer line breaks)
@@ -190,6 +193,13 @@ def parse_ingri_response(response_text):
         raise TypeError(f"Expected 'dishIngredients' to be list, but got {type(ingri_data['dishIngredients'])}.")
     if not isinstance(ingri_data["summary"], str):
         raise TypeError(f"Expected 'summary' to be string, but got {type(ingri_data['summary'])}.")
+    # Added type validation for suggestedRecipes
+    if not isinstance(ingri_data["suggestedRecipes"], list):
+         raise TypeError(f"Expected 'suggestedRecipes' to be list, but got {type(ingri_data['suggestedRecipes'])}.")
+    # Optional: Add check that all items in suggestedRecipes are strings
+    if not all(isinstance(item, str) for item in ingri_data["suggestedRecipes"]):
+         raise TypeError("All items in 'suggestedRecipes' must be strings.")
+
 
     logger.debug("Parsed data validated successfully.")
     return ingri_data
