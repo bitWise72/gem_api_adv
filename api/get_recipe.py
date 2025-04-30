@@ -312,7 +312,7 @@ def get_ingredient_profile():
         # Call a vision-capable model
         # Changed model name to a common multimodal model
         response = client.models.generate_content(
-            model="gemini-1.5-flash", # Or "gemini-1.0-pro-vision" depending on availability and preference
+            model="gemini-2.0-flash", 
             contents=contents # Pass the multimodal contents list
         )
 
