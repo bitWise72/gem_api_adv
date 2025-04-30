@@ -19,6 +19,7 @@ import requests
 from google import genai
 from google.genai import types
 from flask_cors import CORS
+import time
 # Load environment variables
 load_dotenv()
 
@@ -239,118 +240,94 @@ def get_ingredient_profile():
 
     # Build the contents for the Gemini prompt (multimodal)
     contents = [
-        {"text": INGRI_SYSTEM_PROMPT} # System instructions as a text part
+        {"text": INGRI_SYSTEM_PROMPT}  # System instructions as a text part
     ]
 
     # Add dish description if provided
     if dish_description:
-        contents.append({"text": f"User request: {dish_description}"}) # User text as a text part
+        contents.append({"text": f"User request: {dish_description}"})
 
     # Add image if image_url is provided
     if image_url:
         try:
             logger.info(f"Attempting to download image from URL: {image_url}")
-            # Download the image
             image_response = requests.get(image_url, stream=True)
-            image_response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
-
-            # Determine content type (basic check, can be more robust)
+            image_response.raise_for_status()
             content_type = image_response.headers.get("Content-Type", "application/octet-stream")
             if not content_type.startswith("image/"):
-                 logger.warning(f"Downloaded content type is not an image: {content_type}")
-                 # Decide if you want to error out or proceed without the image
-                 # For now, let's raise an error as it's unexpected input for an image slot
-                 raise ValueError(f"URL did not return an image content type: {content_type}")
+                raise ValueError(f"URL did not return an image content type: {content_type}")
 
-            # Read image data into bytes
             image_data = image_response.content
-
-            # Create an image part for the Gemini API
-            # Note: The exact structure for multimodal parts depends on the 'genai' library version.
-            # This uses a dictionary format which is common or needs adaptation based on the library's API.
-            # A common alternative in google.generativeai is genai.types.Part(mime_type=content_type, data=image_data)
-            # Or potentially genai.types.FileData(file_uri=image_url) if the model supports fetching.
-            # We'll use a dictionary structure assuming the client handles it or needs slight adjustment.
-            image_part = {
-                "inlineData": {
-                    "mimeType": content_type,
-                    "data": image_data.hex() # Or base64.b64encode(image_data).decode('utf-8') - hex is just an example
-                    # Using hex() is unlikely what the API expects. Base64 is more common.
-                    # Let's use base64 as it's standard for passing binary data in JSON/API contexts.
-                    # import base64 # Need to add this import
-                    # "data": base64.b64encode(image_data).decode('utf-8')
-                }
-                # Or if the client library supports FileData from bytes:
-                # "fileData": genai.types.FileData(file_uri="data:" + content_type + ";base64," + base64.b64encode(image_data).decode('utf-8'))
-            }
-             # Let's try the dictionary format that aligns with typical REST API representation first
-            import base64 # Make sure base64 is imported
+            import base64
             image_part = {
                 "inlineData": {
                     "mimeType": content_type,
                     "data": base64.b64encode(image_data).decode('utf-8')
                 }
             }
-
             contents.append(image_part)
 
         except requests.exceptions.RequestException as req_err:
             logger.error(f"Error downloading image from {image_url}: {req_err}", exc_info=True)
             return jsonify({"error": f"Failed to download image from URL: {req_err}"}), 400
         except ValueError as val_err:
-             logger.error(f"Validation error processing image URL {image_url}: {val_err}", exc_info=True)
-             return jsonify({"error": f"Invalid image URL or content: {val_err}"}), 400
+            logger.error(f"Validation error processing image URL {image_url}: {val_err}", exc_info=True)
+            return jsonify({"error": f"Invalid image URL or content: {val_err}"}), 400
         except Exception as img_process_err:
             logger.error(f"Unexpected error processing image from {image_url}: {img_process_err}", exc_info=True)
             return jsonify({"error": f"An unexpected error occurred while processing the image: {img_process_err}"}), 500
 
-
     try:
-        # Instantiate the new GenAI client (Gemini 2.0)
+        # Instantiate Gemini client
         client = genai.Client(api_key=gemini_api_key)
 
-        # Call a vision-capable model
-        # Changed model name to a common multimodal model
-        response = client.models.generate_content(
-            model="gemini-2.0-flash", 
-            contents=contents # Pass the multimodal contents list
-        )
+        # Fallback models list
+        models = ["gemini-2.0-flash", "gemini-2.0-alpha", "gemini-1.0"]
+        last_exc = None
 
-        # Check if the response or its text attribute is None or empty
-        # Note: Multimodal responses might have parts besides text.
-        # We primarily expect text containing the JSON, but robustness might check other parts.
-        # For this task, we assume the main output is text with the JSON.
-        if not response or not getattr(response, "text", None):
-             logger.error(f"Empty or invalid text response structure from Gemini API. Response: {response}")
-             # Log response structure if available to help debug
-             if response and hasattr(response, 'parts'):
-                  logger.error(f"Response parts: {response.parts}")
-             raise ValueError("Empty or invalid text response structure from Gemini API")
+        # Attempt each model with retries
+        for model in models:
+            for attempt in range(1, 6):
+                try:
+                    logger.info(f"Calling Gemini model={model}, attempt={attempt}")
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=contents
+                    )
+                    if response and getattr(response, "text", None):
+                        ingredient_data = parse_ingri_response(response.text)
+                        return jsonify(ingredient_data), 200
+                    else:
+                        raise ValueError("Empty response from Gemini API")
+                except Exception as e:
+                    last_exc = e
+                    msg = str(e).lower()
+                    is_503 = hasattr(e, 'status') and e.status == 503
+                    overloaded = "model is overloaded" in msg
+                    if is_503 or overloaded:
+                        wait = 2 ** attempt
+                        logger.warning(f"Model {model} attempt {attempt} failed ({e}), retrying in {wait}s")
+                        time.sleep(wait)
+                        continue
+                    break
+            logger.info(f"Switching to next model after failures on {model}")
 
-
-        # Parse and return using the correct parser function
-        # parse_ingri_response expects a string, so we pass response.text
-        ingredient_data = parse_ingri_response(response.text)
-        return jsonify(ingredient_data), 200
+        # All models failed
+        raise last_exc or Exception("All Gemini models failed.")
 
     except (ValueError, TypeError, json.JSONDecodeError) as parse_err:
-        # Updated error message for the new endpoint
         logger.error("Parsing error in /get_ingri: %s", parse_err, exc_info=True)
         return jsonify({"error": f"Failed to process ingredient data from AI response: {parse_err}"}), 500
-
     except Exception as e:
-        # Catch any other unexpected errors from the API call or processing
         logger.error("Unexpected error during Gemini API call in /get_ingri: %s", e, exc_info=True)
-        # Check if the error is from the genai library and might contain specific details
         api_error_message = str(e)
         if hasattr(e, 'response') and e.response is not None:
-             # Attempt to get more details from an API error response object
-             try:
-                 api_error_message = e.response.text
-             except:
-                 pass # Ignore if unable to get response text
-
+            try:
+                api_error_message = e.response.text
+            except:
+                pass
         return jsonify({"error": f"An unexpected error occurred during AI processing: {api_error_message}"}), 500
+
 
 
 def parse_nutri_response(response_text):
@@ -546,22 +523,12 @@ def parse_gemini_response(response_text):
 
 @app.route("/get_recipe", methods=["POST", "OPTIONS"])
 def get_gemini_response(prompt_text=None, client=None, image_file=None, image_url=None):
-    # data = request.json  # Uses Flask's `request`, not the parameter
-    ...
     """
     Get a recipe from Gemini API using text and/or image input.
-
-    Parameters:
-        prompt_text (str): Text prompt describing the image or recipe idea.
-        client: Gemini client instance.
-        image_file: File-like object (e.g., from frontend upload).
-        image_url (str): URL to the image.
-
-    Returns:
-        str: Gemini-generated response or structured JSON error.
+    ...
     """
     # Handle CORS preflight
-    if request.method == "OPTIONS":  # ADDED — handle preflight
+    if request.method == "OPTIONS":
         response = app.make_default_options_response()
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
@@ -578,7 +545,7 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
         print(f"Initializing Gemini API...")
         client = genai.Client(api_key=gemini_api_key)
 
-        contents = [SYSTEM_PROMPT, ]
+        contents = [SYSTEM_PROMPT]
 
         # Append text if provided
         if prompt_text:
@@ -602,29 +569,48 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
         if not contents:
             raise ValueError("No prompt_text or image provided to Gemini API.")
 
-        print(f"Sending content to Gemini API: {contents}")
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=contents)
+        # --- retry + fallback logic ---
+        models = ["gemini-2.0-flash", "gemini-2.0-alpha", "gemini-1.0"]
+        last_exc = None
 
-        print(f"Raw Gemini response: {response}")
-        if not response or not response.text:
-            raise ValueError("Empty response from Gemini API")
-
-        recipe_data_dict = parse_gemini_response(response.text)
-
+        for model in models:
+            for attempt in range(1, 6):  # up to 5 retries
+                try:
+                    print(f"Sending to Gemini model={model}, attempt={attempt}")
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=contents
+                    )
+                    if response and getattr(response, "text", None):
+                        recipe_data_dict = parse_gemini_response(response.text)
+                        return jsonify(recipe_data_dict)
+                    else:
+                        raise ValueError("Empty response from Gemini API")
+                except Exception as e:
+                    last_exc = e
+                    msg = str(e).lower()
+                    is_503 = hasattr(e, 'status') and e.status == 503
+                    overloaded = "model is overloaded" in msg
+                    if is_503 or overloaded:
+                        wait = 2 ** attempt
+                        print(f"Gemini {model} attempt {attempt} failed ({e}). Retrying in {wait}s...")
+                        time.sleep(wait)
+                        continue
+                    # non-retryable -> break retry loop
+                    break
+            print(f"Switching to next model fallback after failures on {model}.")
+        # all fallbacks failed
+        raise last_exc or Exception("All Gemini models failed.")
 
     except Exception as e:
         print(f"Error in get_gemini_response: {str(e)}")
-        return json.dumps({
+        return jsonify({
             "step 1": {
                 "procedure": "Error getting recipe from Gemini API. Please try again later.",
                 "measurements": [],
                 "time": (0, 0)
             }
         })
-
-    print("---------------------------------------------------")
-    print(recipe_data_dict)
-    return jsonify(recipe_data_dict)
 
 
 # def parse_gemini_response(response_text):
