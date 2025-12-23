@@ -282,7 +282,7 @@ def get_ingredient_profile():
         client = genai.Client(api_key=gemini_api_key)
 
         # Fallback models list
-        models = ["gemini-2.0-flash", "gemini-2.0-alpha", "gemini-1.0"]
+        models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5"]
         last_exc = None
 
         # Attempt each model with retries
@@ -696,7 +696,7 @@ def test():
 # ---- add this instead ----
 # Wrap your Flask app as a Vercel Serverless Function
 # from vercel_wsgi import VercelWSGI
-#
+#    
 # handler = VercelWSGI(app)
 # Add this instead of the commented VercelWSGI section
 def vercel_handler(request):
