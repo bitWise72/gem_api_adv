@@ -15,13 +15,9 @@ import google.generativeai as genai
 load_dotenv()
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-NUTRI_API_KEY = os.environ.get("NUTRI_API_KEY")
 
 if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY not set in environment")
-
-if not NUTRI_API_KEY:
-    raise RuntimeError("NUTRI_API_KEY not set in environment")
 
 # ===================== APP =====================
 app = Flask(__name__)
@@ -51,45 +47,34 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 MODEL_NAME = "gemini-2.5-flash"
 
-# ===================== PROMPTS =====================
-SYSTEM_PROMPT = """You are a precise cooking assistant.
-Return recipes strictly as JSON in the requested structure.
-Use grams and milliliters only.
-Capitalize the first letter of each sentence.
-No colons in procedures.
-If a recipe is given by user, prioritize it.
-If number of people is mentioned, scale quantities.
-"""
+# ===================== PROMPT =====================
+SYSTEM_PROMPT = """
+You are a precise cooking assistant.
 
-NUTRI_SYSTEM_PROMPT = """You are a Nutritional Analysis Assistant.
-Return strictly valid JSON only.
-Format:
-{
-  "ingredient": {
-    "quantity": "100 g",
-    "calories": "100 kcal",
-    "protein": "2 g",
-    "carbohydrates": "20 g",
-    "fiber": "3 g",
-    "sugar": "5 g",
-    "vitamins": "Vitamin C",
-    "fat": "1 g",
-    "error": null
-  }
-}
-Only analyze food.
-"""
+You MUST return ONLY valid JSON.
+Do not include explanations or markdown.
 
-INGRI_SYSTEM_PROMPT = """You are a Diet and Food Analysis Assistant.
-Return strictly valid JSON only in this format:
+Your output format MUST be exactly:
+
 {
-  "dishName": "",
-  "dishCuisine": "",
-  "dishIngredients": [],
-  "summary": "",
-  "suggestedRecipes": []
+  "recipeName": "<string>",
+  "ingredients": [
+    {"name": "<string>", "quantity": <number>, "unit": "grams or milliliters"}
+  ],
+  "procedure": [
+    "<Step 1 sentence>",
+    "<Step 2 sentence>"
+  ],
+  "servings": <number>
 }
-Use user health preferences if given.
+
+Rules:
+- Base the recipe STRICTLY on the user dish name.
+- If the user gives "Biryani", return Biryani, never any other dish.
+- All quantities must be in grams or milliliters.
+- Capitalize the first letter of each sentence in procedure.
+- Do not use colons in procedure steps.
+- If servings are not given, assume 1.
 """
 
 # ===================== LOGGING =====================
@@ -166,82 +151,6 @@ def index():
 def test():
     return jsonify({"status": "ok", "message": "API is working", "auth_required": False})
 
-# --------------------- INGREDIENT PROFILE ---------------------
-@app.route("/get_ingri", methods=["POST", "OPTIONS"])
-def get_ingri():
-    if request.method == "OPTIONS":
-        return "", 200
-
-    data = request.get_json(silent=True)
-    logger.info(f"/get_ingri payload: {data}")
-
-    if not data:
-        return jsonify({"error": "JSON body required"}), 400
-
-    dish_description = data.get("dish_description", "").strip()
-    image_url = data.get("image_url", "").strip()
-
-    if not dish_description and not image_url:
-        return jsonify({"error": "Provide dish_description or image_url"}), 400
-
-    contents = [{"text": INGRI_SYSTEM_PROMPT}]
-
-    if dish_description:
-        contents.append({"text": dish_description})
-
-    if image_url:
-        try:
-            r = requests.get(image_url, timeout=10)
-            r.raise_for_status()
-
-            if not r.headers.get("Content-Type", "").startswith("image/"):
-                return jsonify({"error": "URL is not an image"}), 400
-
-            image_part = {
-                "inlineData": {
-                    "mimeType": r.headers["Content-Type"],
-                    "data": base64.b64encode(r.content).decode()
-                }
-            }
-            contents.append(image_part)
-        except Exception as e:
-            log_exception("Image download failed", e)
-            return jsonify({"error": str(e)}), 400
-
-    try:
-        raw_text = call_gemini(contents)
-        data = parse_json_response(raw_text)
-        return jsonify(data), 200
-    except Exception as e:
-        log_exception("/get_ingri failed", e)
-        return jsonify({"error": str(e)}), 500
-
-# --------------------- NUTRITION PROFILE ---------------------
-@app.route("/get_nutri", methods=["POST", "OPTIONS"])
-def get_nutri():
-    if request.method == "OPTIONS":
-        return "", 200
-
-    data = request.get_json(silent=True)
-    logger.info(f"/get_nutri payload: {data}")
-
-    if not data:
-        return jsonify({"error": "JSON body required"}), 400
-
-    ingredients_string = data.get("ingredients_string", "").strip()
-    if not ingredients_string:
-        return jsonify({"error": "ingredients_string missing"}), 400
-
-    contents = [NUTRI_SYSTEM_PROMPT, ingredients_string]
-
-    try:
-        raw_text = call_gemini(contents)
-        nutrition_data = parse_json_response(raw_text)
-        return jsonify(nutrition_data), 200
-    except Exception as e:
-        log_exception("/get_nutri failed", e)
-        return jsonify({"error": str(e)}), 500
-
 # --------------------- RECIPE ---------------------
 @app.route("/get_recipe", methods=["POST", "OPTIONS"])
 def get_recipe():
@@ -254,13 +163,16 @@ def get_recipe():
     if not data:
         return jsonify({"error": "JSON body required"}), 400
 
-    user_prompt = data.get("user_prompt", "").strip()
+    prompt_text = data.get("prompt_text", "").strip()
     image_url = data.get("image_url", "").strip()
 
-    contents = [SYSTEM_PROMPT]
+    if not prompt_text and not image_url:
+        return jsonify({"error": "Provide prompt_text or image_url"}), 400
 
-    if user_prompt:
-        contents.append(user_prompt)
+    # ---- STRICTLY BIND MODEL TO USER PROMPT ----
+    user_prompt = f"Generate a recipe ONLY for this dish: {prompt_text}"
+
+    contents = [SYSTEM_PROMPT, user_prompt]
 
     if image_url:
         try:
