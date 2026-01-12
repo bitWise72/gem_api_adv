@@ -277,6 +277,10 @@ def get_ingredient_profile():
             logger.error(f"Unexpected error processing image from {image_url}: {img_process_err}", exc_info=True)
             return jsonify({"error": f"An unexpected error occurred while processing the image: {img_process_err}"}), 500
 
+    # Fallback models list
+    models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+    last_exc = None
+    
     try:
         # Instantiate Gemini client
         client = genai.Client(api_key=gemini_api_key)
