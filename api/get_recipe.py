@@ -116,8 +116,10 @@ def parse_json_response(text):
         try:
             return ast.literal_eval(clean_json(text))
         except Exception as e:
+            logger.error("Gemini did NOT return valid JSON. Raw response below:")
+            logger.error(text)
             log_exception("JSON parsing failed", e)
-            raise
+            raise ValueError("Model did not return valid JSON")
 
 # ===================== GEMINI CALL =====================
 def call_gemini(contents):
@@ -126,7 +128,13 @@ def call_gemini(contents):
             logger.info(f"Calling Gemini | model={MODEL_NAME} | attempt={attempt}")
             logger.debug(f"Prompt contents: {contents}")
 
-            model = genai.GenerativeModel(MODEL_NAME)
+            model = genai.GenerativeModel(
+                MODEL_NAME,
+                generation_config={
+                    "response_mime_type": "application/json"
+                }
+            )
+
             response = model.generate_content(contents)
 
             if not response or not getattr(response, "text", None):
