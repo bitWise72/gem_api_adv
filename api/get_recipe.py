@@ -163,16 +163,17 @@ def get_recipe():
     if not data:
         return jsonify({"error": "JSON body required"}), 400
 
-    prompt_text = data.get("prompt_text", "").strip()
+    # ✅ ONLY CHANGE: prompt_text → user_prompt
+    user_prompt = data.get("user_prompt", "").strip()
     image_url = data.get("image_url", "").strip()
 
-    if not prompt_text and not image_url:
-        return jsonify({"error": "Provide prompt_text or image_url"}), 400
+    if not user_prompt and not image_url:
+        return jsonify({"error": "Provide user_prompt or image_url"}), 400
 
     # ---- STRICTLY BIND MODEL TO USER PROMPT ----
-    user_prompt = f"Generate a recipe ONLY for this dish: {prompt_text}"
+    final_prompt = f"Generate a recipe ONLY for this dish: {user_prompt}"
 
-    contents = [SYSTEM_PROMPT, user_prompt]
+    contents = [SYSTEM_PROMPT, final_prompt]
 
     if image_url:
         try:
