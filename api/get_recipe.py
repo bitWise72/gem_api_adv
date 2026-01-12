@@ -282,7 +282,8 @@ def get_ingredient_profile():
         client = genai.Client(api_key=gemini_api_key)
 
         # Fallback models list
-models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]        last_exc = None
+models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+    last_exc = None
 
         # Attempt each model with retries
         for model in models:
@@ -569,7 +570,8 @@ def get_gemini_response(prompt_text=None, client=None, image_file=None, image_ur
             raise ValueError("No prompt_text or image provided to Gemini API.")
 
         # --- retry + fallback logic ---
-models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]        last_exc = None
+models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+    last_exc = None
 
         for model in models:
             for attempt in range(1, 6):  # up to 5 retries
